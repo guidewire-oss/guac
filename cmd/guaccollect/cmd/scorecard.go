@@ -68,18 +68,18 @@ guaccollect scorecard runs the scorecard certifier to query scorecard data for s
 
 The scorecard certifier supports two fetcher types:
 
-1. Local Fetcher (--scorecard-fetcher-type=local, default):
-   - Uses the OpenSSF Scorecard library to clone repositories and run scorecard checks locally
-   - Requires GITHUB_AUTH_TOKEN environment variable
-   - Provides comprehensive analysis but requires more resources
-   - Suitable for detailed security analysis
-
-2. API Fetcher (--scorecard-fetcher-type=api):
+1. API Fetcher (--scorecard-fetcher-type=api, default):
    - Uses the OpenSSF Scorecard REST API to fetch pre-computed scorecard data
    - Does not require GitHub token authentication
    - Faster and more resource-efficient
    - Suitable for large-scale operations with rate limiting
    - Configurable API base URL, domain prefix, and HTTP timeout
+
+2. Local Fetcher (--scorecard-fetcher-type=local):
+   - Uses the OpenSSF Scorecard library to clone repositories and run scorecard checks locally
+   - Requires GITHUB_AUTH_TOKEN environment variable
+   - Provides comprehensive analysis but requires more resources
+   - Suitable for detailed security analysis
 
 Ingestion to GUAC happens via an event stream (NATS) to allow for decoupling of the collectors
 from the ingestion into GUAC.
@@ -96,14 +96,17 @@ Specific authentication method vary per cloud provider. Please follow the docume
 you have access to read and write to the respective blob store.
 
 Examples:
-  # Use local scorecard library (default)
-  guaccollect scorecard --scorecard-fetcher-type=local
+  # Use API-based fetcher (default)
+  guaccollect scorecard
 
   # Use API-based fetcher with custom settings
   guaccollect scorecard --scorecard-fetcher-type=api \
     --scorecard-api-base=https://api.securityscorecards.dev \
     --scorecard-domain-prefix=github.com \
-    --scorecard-http-timeout=60s`,
+    --scorecard-http-timeout=60s
+
+  # Use local scorecard library
+  guaccollect scorecard --scorecard-fetcher-type=local`,
 	Run: func(cmd *cobra.Command, args []string) {
 		opts, err := validateScorecardFlags(
 			viper.GetString("gql-addr"),
@@ -226,7 +229,7 @@ func validateScorecardFlags(
 
 	// Validate and set fetcher type
 	if fetcherType == "" {
-		fetcherType = "local" // default to local
+		fetcherType = "api" // default to api
 	}
 	if fetcherType != "local" && fetcherType != "api" {
 		return opts, fmt.Errorf("invalid scorecard-fetcher-type: %s. Must be 'local' or 'api'", fetcherType)
@@ -272,7 +275,7 @@ func init() {
 	scorecardCmd.PersistentFlags().AddFlagSet(set)
 
 	// Add scorecard-specific flags
-	scorecardCmd.Flags().String("scorecard-fetcher-type", "local", "Scorecard fetcher type: 'local' (default, uses scorecard library) or 'api' (uses REST API)")
+	scorecardCmd.Flags().String("scorecard-fetcher-type", "api", "Scorecard fetcher type: 'api' (default, uses REST API) or 'local' (uses scorecard library)")
 	scorecardCmd.Flags().String("scorecard-api-base", "https://api.securityscorecards.dev", "Base URL for scorecard API when using 'api' fetcher type")
 	scorecardCmd.Flags().String("scorecard-domain-prefix", "github.com", "Domain prefix for repository URLs when using 'api' fetcher type")
 	scorecardCmd.Flags().String("scorecard-http-timeout", "30s", "HTTP timeout for API requests when using 'api' fetcher type")
