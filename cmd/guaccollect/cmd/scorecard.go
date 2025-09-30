@@ -66,21 +66,6 @@ var scorecardCmd = &cobra.Command{
 	Long: `
 guaccollect scorecard runs the scorecard certifier to query scorecard data for sources that are collected in GUAC.
 
-The scorecard certifier supports two fetcher types:
-
-1. API Fetcher (--scorecard-fetcher-type=api, default):
-   - Uses the OpenSSF Scorecard REST API to fetch pre-computed scorecard data
-   - Does not require GitHub token authentication
-   - Faster and more resource-efficient
-   - Suitable for large-scale operations with rate limiting
-   - Configurable API base URL, domain prefix, and HTTP timeout
-
-2. Local Fetcher (--scorecard-fetcher-type=local):
-   - Uses the OpenSSF Scorecard library to clone repositories and run scorecard checks locally
-   - Requires GITHUB_AUTH_TOKEN environment variable
-   - Provides comprehensive analysis but requires more resources
-   - Suitable for detailed security analysis
-
 Ingestion to GUAC happens via an event stream (NATS) to allow for decoupling of the collectors
 from the ingestion into GUAC.
 
@@ -93,20 +78,7 @@ Various blob stores can be used (such as S3, Azure Blob, Google Cloud Bucket) as
 For example: "s3://my-bucket?region=us-west-1"
 
 Specific authentication method vary per cloud provider. Please follow the documentation per implementation to ensure
-you have access to read and write to the respective blob store.
-
-Examples:
-  # Use API-based fetcher (default)
-  guaccollect scorecard
-
-  # Use API-based fetcher with custom settings
-  guaccollect scorecard --scorecard-fetcher-type=api \
-    --scorecard-api-base=https://api.securityscorecards.dev \
-    --scorecard-domain-prefix=github.com \
-    --scorecard-http-timeout=60s
-
-  # Use local scorecard library
-  guaccollect scorecard --scorecard-fetcher-type=local`,
+you have access to read and write to the respective blob store.`,
 	Run: func(cmd *cobra.Command, args []string) {
 		opts, err := validateScorecardFlags(
 			viper.GetString("gql-addr"),
