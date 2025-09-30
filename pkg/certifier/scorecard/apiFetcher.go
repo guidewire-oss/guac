@@ -74,6 +74,11 @@ func (a apiScorecardRunner) GetScore(repoName, commitSHA, tag string) (*sc.Score
 	return result, nil
 }
 
+// RequiresGitHubToken returns false for API scorecard runner as it doesn't need GitHub authentication
+func (a apiScorecardRunner) RequiresGitHubToken() bool {
+	return false
+}
+
 // buildAPIURL constructs the OpenSSF Scorecard API URL for the given repository
 func (a apiScorecardRunner) buildAPIURL(repoName string) string {
 	// Handle different repository URL formats (e.g., github.com/owner/repo)
