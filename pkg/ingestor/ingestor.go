@@ -25,7 +25,9 @@ import (
 
 	"github.com/Khan/genqlient/graphql"
 	"github.com/guacsec/guac/pkg/assembler"
-	"github.com/guacsec/guac/pkg/assembler/clients/helpers"
+	"github.com/guacsec/guac/pkg/assembler/clients/generated"
+	bulk_helpers "github.com/guacsec/guac/pkg/assembler/clients/helpers"
+	"github.com/guacsec/guac/pkg/assembler/helpers"
 	csub_client "github.com/guacsec/guac/pkg/collectsub/client"
 	"github.com/guacsec/guac/pkg/collectsub/collectsub/input"
 	"github.com/guacsec/guac/pkg/handler/processor"
@@ -46,7 +48,7 @@ func Ingest(
 	scanForLicense bool,
 	scanForEOL bool,
 	scanForDepsDev bool,
-) (*helpers.AssemblerIngestedIDs, error) {
+) (*bulk_helpers.AssemblerIngestedIDs, error) {
 	logger := d.ChildLogger
 	// Get pipeline of components
 	processorFunc := GetProcessor(ctx)
@@ -104,7 +106,11 @@ func MergedIngest(
 	predicates := make([]assembler.IngestPredicates, 1)
 	totalPredicates := 0
 	var idstrings []*parser_common.IdentifierStrings
-	for _, d := range docs {
+
+	// [GuacDebug] DEBUG POINT 4: Log start of processing
+	logger.Infof("[GuacDebug] [INGESTOR] Starting MergedIngest with %d documents", len(docs))
+
+	for docNum, d := range docs {
 		docTree, err := processorFunc(d)
 		if err != nil {
 			return fmt.Errorf("unable to process doc: %v, format: %v, document: %v", err, d.Format, d.Type)
@@ -114,6 +120,11 @@ func MergedIngest(
 		if err != nil {
 			return fmt.Errorf("unable to ingest doc tree: %v", err)
 		}
+
+		// [GuacDebug] DEBUG POINT 5: Log predicates from each document
+		logger.Debugf("[GuacDebug] [INGESTOR] Document %d predicates: CertifyLegal=%d, HasSourceAt=%d",
+			docNum, len(preds[0].CertifyLegal), len(preds[0].HasSourceAt))
+
 		for i := range preds {
 			predicates[0].CertifyScorecard = append(predicates[0].CertifyScorecard, preds[i].CertifyScorecard...)
 			predicates[0].IsDependency = append(predicates[0].IsDependency, preds[i].IsDependency...)
@@ -132,9 +143,39 @@ func MergedIngest(
 			predicates[0].VulnMetadata = append(predicates[0].VulnMetadata, preds[i].VulnMetadata...)
 			predicates[0].HasMetadata = append(predicates[0].HasMetadata, preds[i].HasMetadata...)
 			predicates[0].CertifyLegal = append(predicates[0].CertifyLegal, preds[i].CertifyLegal...)
+
+			// [GuacDebug] DEBUG POINT 6: Log after merging
+			logger.Debugf("[GuacDebug] [INGESTOR] After merge: Total CertifyLegal=%d, HasSourceAt=%d",
+				len(predicates[0].CertifyLegal), len(predicates[0].HasSourceAt))
+
+			// [GuacDebug] DEBUG POINT 7: Check for duplicate sources in accumulated predicates
+			sourcesSeen := make(map[string]int)
+			for _, cl := range predicates[0].CertifyLegal {
+				if cl.Src != nil {
+					srcKey := helpers.GetKey[*generated.SourceInputSpec, helpers.SrcIds](
+						cl.Src, helpers.SrcClientKey).NameId
+					sourcesSeen[srcKey]++
+				}
+			}
+			for _, hs := range predicates[0].HasSourceAt {
+				if hs.Src != nil {
+					srcKey := helpers.GetKey[*generated.SourceInputSpec, helpers.SrcIds](
+						hs.Src, helpers.SrcClientKey).NameId
+					sourcesSeen[srcKey]++
+				}
+			}
+
+			for srcKey, count := range sourcesSeen {
+				if count > 1 {
+					logger.Warnf("⚠️  [INGESTOR] Source appears %d times in predicates: %s", count, srcKey)
+				}
+			}
+
 			totalPredicates += 1
 			// enough predicates have been collected, worth sending them to GraphQL server
 			if totalPredicates == 5000 {
+				// [GuacDebug] DEBUG POINT 8: Batch processing
+				logger.Infof("[GuacDebug] [INGESTOR] Calling assembler with batch of %d predicates", totalPredicates)
 				_, err = assemblerFunc(predicates)
 				if err != nil {
 					return fmt.Errorf("unable to assemble graphs: %v", err)
@@ -151,6 +192,9 @@ func MergedIngest(
 	if err != nil {
 		logger.Infof("unable to create entries in collectsub server, but continuing: %v", err)
 	}
+
+	// [GuacDebug] DEBUG POINT 8: Final batch
+	logger.Infof("[GuacDebug] [INGESTOR] Calling assembler with final batch (%d predicates)", totalPredicates)
 
 	_, err = assemblerFunc(predicates)
 	if err != nil {
@@ -179,11 +223,11 @@ func GetAssembler(
 	childLogger *zap.SugaredLogger,
 	graphqlEndpoint string,
 	transport http.RoundTripper,
-) func([]assembler.IngestPredicates) (*helpers.AssemblerIngestedIDs, error) {
+) func([]assembler.IngestPredicates) (*bulk_helpers.AssemblerIngestedIDs, error) {
 	httpClient := http.Client{Transport: transport}
 	gqlclient := graphql.NewClient(graphqlEndpoint, &httpClient)
 
-	return helpers.GetBulkAssembler(ctx, childLogger, gqlclient)
+	return bulk_helpers.GetBulkAssembler(ctx, childLogger, gqlclient)
 }
 
 func GetCollectSubEmit(ctx context.Context, csubClient csub_client.Client) func([]*parser_common.IdentifierStrings) error {

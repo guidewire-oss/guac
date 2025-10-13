@@ -26,6 +26,7 @@ import (
 	"github.com/guacsec/guac/pkg/assembler"
 	model "github.com/guacsec/guac/pkg/assembler/clients/generated"
 	"github.com/guacsec/guac/pkg/assembler/helpers"
+	"github.com/guacsec/guac/pkg/logging"
 )
 
 type AssemblerIngestedIDs struct {
@@ -267,17 +268,56 @@ func ingestPackages(ctx context.Context, client graphql.Client, packageInputMap 
 
 // ingestSources takes in the map of IDorSourceInput which contains the sourceInputSpec and outputs a map that contains the srcIDs to be used for verb ingestion
 func ingestSources(ctx context.Context, client graphql.Client, sourceInputMap map[string]*model.IDorSourceInput) (map[string]*model.IDorSourceInput, error) {
+	logger := logging.FromContext(ctx)
+
+	// [GuacDebug] DEBUG POINT 13: Log input map size
+	logger.Infof("[GuacDebug] [INGESTSOURCES] Received map with %d unique sources", len(sourceInputMap))
+
 	var keys []string
 	var srcInputs []model.IDorSourceInput
 	srcInputs = make([]model.IDorSourceInput, 0)
 	for key, srcInput := range sourceInputMap {
+		// [GuacDebug] DEBUG POINT 14: Log each map entry
+		logger.Debugf("[GuacDebug] [INGESTSOURCES] Processing map entry: %s", key)
 		keys = append(keys, key)
 		srcInputs = append(srcInputs, *srcInput)
 	}
+
+	// [GuacDebug] DEBUG POINT 15: Check for duplicates in array
+	seenInArray := make(map[string]int)
+	for i, src := range srcInputs {
+		if src.SourceInput == nil {
+			continue
+		}
+		// Build a key from the source input for tracking
+		srcKey := fmt.Sprintf("%s::%s::%s::%v::%v",
+			src.SourceInput.Type,
+			src.SourceInput.Namespace,
+			src.SourceInput.Name,
+			src.SourceInput.Tag,
+			src.SourceInput.Commit)
+		seenInArray[srcKey]++
+
+		logger.Debugf("[GuacDebug] [INGESTSOURCES] Array[%d]: %s", i, srcKey)
+
+		if seenInArray[srcKey] > 1 {
+			logger.Errorf("❌ [INGESTSOURCES] DUPLICATE FOUND IN ARRAY at index %d: %s (appearance #%d)",
+				i, srcKey, seenInArray[srcKey])
+		}
+	}
+
+	// [GuacDebug] DEBUG POINT 16: Log array size
+	logger.Infof("[GuacDebug] [INGESTSOURCES] Sending array with %d sources to GraphQL", len(srcInputs))
+
 	response, err := model.IngestSources(ctx, client, srcInputs)
 	if err != nil {
+		logger.Errorf("❌ [INGESTSOURCES] GraphQL IngestSources failed: %v", err)
 		return nil, fmt.Errorf("IngestSources failed with error: %w", err)
 	}
+
+	// [GuacDebug] DEBUG POINT 17: Log successful response
+	logger.Infof("[GuacDebug] [INGESTSOURCES] GraphQL returned %d source IDs", len(response.IngestSources))
+
 	results := make(map[string]*model.IDorSourceInput)
 
 	for i := range response.IngestSources {

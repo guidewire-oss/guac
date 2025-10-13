@@ -20,6 +20,7 @@ import (
 
 	"github.com/guacsec/guac/pkg/assembler/clients/generated"
 	"github.com/guacsec/guac/pkg/assembler/helpers"
+	"github.com/guacsec/guac/pkg/logging"
 )
 
 type assembler struct{} //nolint: unused
@@ -309,7 +310,17 @@ func (i IngestPredicates) GetPackages(ctx context.Context) map[string]*generated
 }
 
 func (i IngestPredicates) GetSources(ctx context.Context) map[string]*generated.IDorSourceInput {
+	logger := logging.FromContext(ctx)
 	sourceMap := make(map[string]*generated.IDorSourceInput)
+
+	// [GuacDebug] DEBUG POINT 9: Log input counts
+	logger.Debugf("[GuacDebug] [GETSOURCES] Input: CertifyLegal=%d, HasSourceAt=%d, CertifyScorecard=%d",
+		len(i.CertifyLegal), len(i.HasSourceAt), len(i.CertifyScorecard))
+
+	// Track what we see
+	sourcesProcessed := 0
+	duplicatesSkipped := 0
+
 	for _, score := range i.CertifyScorecard {
 		if score.Source != nil {
 			sourceString := helpers.GetKey[*generated.SourceInputSpec, helpers.SrcIds](score.Source, helpers.SrcClientKey).NameId
@@ -328,9 +339,16 @@ func (i IngestPredicates) GetSources(ctx context.Context) map[string]*generated.
 	}
 	for _, hasSource := range i.HasSourceAt {
 		if hasSource.Src != nil {
+			sourcesProcessed++
 			sourceString := helpers.GetKey[*generated.SourceInputSpec, helpers.SrcIds](hasSource.Src, helpers.SrcClientKey).NameId
 			if _, ok := sourceMap[sourceString]; !ok {
 				sourceMap[sourceString] = &generated.IDorSourceInput{SourceInput: hasSource.Src}
+				// [GuacDebug] DEBUG POINT 10: Added source from HasSourceAt
+				logger.Debugf("[GuacDebug] [GETSOURCES] Added source from HasSourceAt: %s", sourceString)
+			} else {
+				duplicatesSkipped++
+				// [GuacDebug] DEBUG POINT 10: Skipped duplicate from HasSourceAt
+				logger.Debugf("[GuacDebug] [GETSOURCES] Skipped duplicate from HasSourceAt: %s", sourceString)
 			}
 		}
 	}
@@ -368,11 +386,27 @@ func (i IngestPredicates) GetSources(ctx context.Context) map[string]*generated.
 	}
 	for _, cl := range i.CertifyLegal {
 		if cl.Src != nil {
+			sourcesProcessed++
 			sourceString := helpers.GetKey[*generated.SourceInputSpec, helpers.SrcIds](cl.Src, helpers.SrcClientKey).NameId
 			if _, ok := sourceMap[sourceString]; !ok {
 				sourceMap[sourceString] = &generated.IDorSourceInput{SourceInput: cl.Src}
+				// [GuacDebug] DEBUG POINT 10: Added source from CertifyLegal
+				logger.Debugf("[GuacDebug] [GETSOURCES] Added source from CertifyLegal: %s", sourceString)
+			} else {
+				duplicatesSkipped++
+				// [GuacDebug] DEBUG POINT 10: Skipped duplicate from CertifyLegal
+				logger.Debugf("[GuacDebug] [GETSOURCES] Skipped duplicate from CertifyLegal: %s", sourceString)
 			}
 		}
+	}
+
+	// [GuacDebug] DEBUG POINT 11: Log final counts
+	logger.Infof("[GuacDebug] [GETSOURCES] Processed %d source references, skipped %d duplicates, returning %d unique sources",
+		sourcesProcessed, duplicatesSkipped, len(sourceMap))
+
+	// [GuacDebug] DEBUG POINT 12: Log each unique source
+	for srcKey := range sourceMap {
+		logger.Debugf("[GuacDebug] [GETSOURCES] Unique source in map: %s", srcKey)
 	}
 
 	return sourceMap

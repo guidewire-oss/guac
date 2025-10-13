@@ -28,6 +28,7 @@ import (
 	attestation_license "github.com/guacsec/guac/pkg/certifier/attestation/license"
 	"github.com/guacsec/guac/pkg/handler/processor"
 	"github.com/guacsec/guac/pkg/ingestor/parser/common"
+	"github.com/guacsec/guac/pkg/logging"
 )
 
 var json = jsoniter.ConfigCompatibleWithStandardLibrary
@@ -107,7 +108,9 @@ The “licensed” -> “facets” -> “core” -> “attribution” -> “part
 “described” -> “sourceLocation” can be used to create a HasSourceAt GUAC node. */
 
 // parseClearlyDefined parses the attestation to collect the license information
-func (c *parser) parseClearlyDefined(_ context.Context, s *attestation_license.ClearlyDefinedStatement) error {
+func (c *parser) parseClearlyDefined(ctx context.Context, s *attestation_license.ClearlyDefinedStatement) error {
+	logger := logging.FromContext(ctx)
+
 	if s.Predicate.Definition.Licensed.Declared != "" {
 		discoveredLicenses := make([]generated.LicenseInputSpec, 0)
 		var discoveredLicenseStr string = ""
@@ -134,6 +137,13 @@ func (c *parser) parseClearlyDefined(_ context.Context, s *attestation_license.C
 			return fmt.Errorf("package nor source specified for certifyLegal")
 		}
 		c.collectedCertifyLegal = append(c.collectedCertifyLegal, declared)
+
+		// [GuacDebug] DEBUG POINT 2: Check CertifyLegal predicates
+		if declared.Src != nil {
+			srcKey := helpers.GetKey[*generated.SourceInputSpec, helpers.SrcIds](declared.Src, helpers.SrcClientKey).NameId
+			logger.Debugf("[GuacDebug] [PARSER] CertifyLegal with source: %s", srcKey)
+		}
+		logger.Debugf("[GuacDebug] [PARSER] Total CertifyLegal predicates: %d", len(c.collectedCertifyLegal))
 	} else {
 		if len(s.Predicate.Definition.Licensed.Facets.Core.Discovered.Expressions) > 0 {
 			discoveredLicense := common.CombineLicense(s.Predicate.Definition.Licensed.Facets.Core.Discovered.Expressions)
@@ -157,6 +167,13 @@ func (c *parser) parseClearlyDefined(_ context.Context, s *attestation_license.C
 				return fmt.Errorf("package nor source specified for certifyLegal")
 			}
 			c.collectedCertifyLegal = append(c.collectedCertifyLegal, discovered)
+
+			// [GuacDebug] DEBUG POINT 2: Check CertifyLegal predicates
+			if discovered.Src != nil {
+				srcKey := helpers.GetKey[*generated.SourceInputSpec, helpers.SrcIds](discovered.Src, helpers.SrcClientKey).NameId
+				logger.Debugf("[GuacDebug] [PARSER] CertifyLegal with source: %s", srcKey)
+			}
+			logger.Debugf("[GuacDebug] [PARSER] Total CertifyLegal predicates: %d", len(c.collectedCertifyLegal))
 		}
 	}
 
@@ -164,6 +181,12 @@ func (c *parser) parseClearlyDefined(_ context.Context, s *attestation_license.C
 		sourceLocation := s.Predicate.Definition.Described.SourceLocation
 		srcInput := helpers.SourceToSourceInput(sourceLocation.Type, sourceLocation.Namespace,
 			sourceLocation.Name, &sourceLocation.Revision)
+
+		// [GuacDebug] DEBUG POINT 1: Check what sources are being added
+		logger := logging.FromContext(ctx)
+		srcKey := helpers.GetKey[*generated.SourceInputSpec, helpers.SrcIds](srcInput, helpers.SrcClientKey).NameId
+		logger.Debugf("[GuacDebug] [PARSER] Adding source from SourceLocation: %s", srcKey)
+
 		if c.pkg != nil {
 			c.hasSourceAt = append(c.hasSourceAt, assembler.HasSourceAtIngest{
 				Pkg:          c.pkg,
@@ -174,16 +197,25 @@ func (c *parser) parseClearlyDefined(_ context.Context, s *attestation_license.C
 					Justification: justification,
 				},
 			})
+			logger.Debugf("[GuacDebug] [PARSER] Total hasSourceAt predicates: %d", len(c.hasSourceAt))
 		}
 	}
 	return nil
 }
 
 func (c *parser) GetPredicates(ctx context.Context) *assembler.IngestPredicates {
-	return &assembler.IngestPredicates{
+	logger := logging.FromContext(ctx)
+
+	// [GuacDebug] DEBUG POINT 3: Return statement - log all predicates
+	preds := &assembler.IngestPredicates{
 		CertifyLegal: c.collectedCertifyLegal,
 		HasSourceAt:  c.hasSourceAt,
 	}
+
+	logger.Debugf("[GuacDebug] [PARSER] Returning predicates: CertifyLegal=%d, HasSourceAt=%d",
+		len(preds.CertifyLegal), len(preds.HasSourceAt))
+
+	return preds
 }
 
 // GetIdentities gets the identity node from the document if they exist
