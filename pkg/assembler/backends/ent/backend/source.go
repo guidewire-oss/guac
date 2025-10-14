@@ -509,35 +509,56 @@ func upsertBulkSource(ctx context.Context, tx *ent.Tx, srcInputs []*model.IDorSo
 	srcNamespaces := map[string]string{}
 
 	for _, srcs := range batches {
-		srcNameCreates := make([]*ent.SourceNameCreate, len(srcs))
-
-		for i, src := range srcs {
+		// Deduplicate sources within the batch by UUID to avoid primary key violations
+		srcMap := make(map[string]*model.IDorSourceInput)
+		srcOrder := make([]string, 0) // Preserve order for deterministic results
+		
+		for _, src := range srcs {
 			s := src
 			srcIDs := helpers.GetKey[*model.SourceInputSpec, helpers.SrcIds](s.SourceInput, helpers.SrcServerKey)
 			srcNameID := generateUUIDKey([]byte(srcIDs.NameId))
-
-			srcNameCreates[i] = generateSourceNameCreate(tx, &srcNameID, s)
-			srcNameIDs = append(srcNameIDs, srcNameID.String())
-			srcTypes[srcNameID.String()] = s.SourceInput.Type
-			srcNamespaces[srcNameID.String()] = strings.Join([]string{s.SourceInput.Type, s.SourceInput.Namespace}, guacIDSplit)
+			srcNameIDStr := srcNameID.String()
+			
+			// Only add if not already in map (deduplicate)
+			if _, exists := srcMap[srcNameIDStr]; !exists {
+				srcMap[srcNameIDStr] = s
+				srcOrder = append(srcOrder, srcNameIDStr)
+			}
 		}
 
-		if err := tx.SourceName.CreateBulk(srcNameCreates...).
-			OnConflict(
-				sql.ConflictColumns(
-					sourcename.FieldType,
-					sourcename.FieldNamespace,
-					sourcename.FieldName,
-					sourcename.FieldTag,
-					sourcename.FieldCommit,
-				),
-			).
-			DoNothing().
-			Exec(ctx); err != nil {
+		// Create bulk insert array from deduplicated sources
+		srcNameCreates := make([]*ent.SourceNameCreate, len(srcOrder))
+		
+		for i, srcNameIDStr := range srcOrder {
+			srcNameID, _ := uuid.Parse(srcNameIDStr)
+			s := srcMap[srcNameIDStr]
+			
+			srcNameCreates[i] = generateSourceNameCreate(tx, &srcNameID, s)
+			srcNameIDs = append(srcNameIDs, srcNameIDStr)
+			srcTypes[srcNameIDStr] = s.SourceInput.Type
+			srcNamespaces[srcNameIDStr] = strings.Join([]string{s.SourceInput.Type, s.SourceInput.Namespace}, guacIDSplit)
+		}
 
-			return nil, errors.Wrap(err, "bulk upsert source name node")
+		if len(srcNameCreates) > 0 {
+			if err := tx.SourceName.CreateBulk(srcNameCreates...).
+				OnConflict(
+					sql.ConflictColumns(
+						sourcename.FieldType,
+						sourcename.FieldNamespace,
+						sourcename.FieldName,
+						sourcename.FieldTag,
+						sourcename.FieldCommit,
+					),
+				).
+				DoNothing().
+				Exec(ctx); err != nil {
+
+				return nil, errors.Wrap(err, "bulk upsert source name node")
+			}
 		}
 	}
+	
+	// Build result maintaining original input order by UUID
 	var collectedSrcIDs []model.SourceIDs
 	for i := range srcNameIDs {
 		collectedSrcIDs = append(collectedSrcIDs, model.SourceIDs{
