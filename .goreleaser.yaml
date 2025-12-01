@@ -211,7 +211,7 @@ changelog:
 
 release:
   prerelease: auto
-  draft: false
+  draft: true
   replace_existing_draft: true
 # The lines beneath this are called `modelines`. See `:help modeline`
 # yaml-language-server: $schema=https://goreleaser.com/static/schema.json
