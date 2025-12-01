@@ -2253,13 +2253,19 @@ var (
 				"version": "0.0.14",
 				"result": [
 					{
-						"id": "GHSA-53jx-vvf9-4x38"
+						"id":"GHSA-45p5-v273-3qqr"
+					},
+					{
+						"id":"GHSA-53jx-vvf9-4x38"
+					},
+					{
+						"id":"GHSA-h5fg-jpgr-rv9c"
 					}
 				]
 			},
 			"metadata": {
-				"scanStartedOn":"2023-02-15T11:10:08.986506-08:00",
-				"scanFinishedOn":"2023-02-15T11:10:08.986506-08:00"
+				"scanStartedOn":"2025-12-01T09:24:51.221983007Z",
+				"scanFinishedOn":"2025-12-01T09:24:51.221983007Z"
 			}
 		}
 	}`
