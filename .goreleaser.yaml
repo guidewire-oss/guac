@@ -182,12 +182,16 @@ sboms:
 signs:
   - id: guac-cosign-keyless
     artifacts: checksum
-    signature: "${artifact}.bundle"
+    signature: "${artifact}-keyless.sig"
+    certificate: "${artifact}-keyless.pem"
     cmd: cosign
     args:
       - "sign-blob"
-      - "--bundle=${signature}"
       - "--yes"
+      - "--output-signature"
+      - "${artifact}-keyless.sig"
+      - "--output-certificate"
+      - "${artifact}-keyless.pem"
       - "${artifact}"
     output: true
 
@@ -211,7 +215,7 @@ changelog:
 
 release:
   prerelease: auto
-  draft: true
+  draft: false
   replace_existing_draft: true
 # The lines beneath this are called `modelines`. See `:help modeline`
 # yaml-language-server: $schema=https://goreleaser.com/static/schema.json

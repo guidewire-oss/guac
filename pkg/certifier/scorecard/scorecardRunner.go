@@ -22,7 +22,6 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"strings"
 	"time"
 
 	"github.com/guacsec/guac/pkg/logging"
@@ -74,16 +73,6 @@ func (s scorecardRunner) getScoreFromAPI(repoName, commitSHA, tag string) (*sc.S
 	if (commitSHA == "" || commitSHA == "HEAD") && tag != "" {
 		logger.Debugf("Cannot use API for tag %s without commit SHA - will fall back to local computation", tag)
 		return nil, fmt.Errorf("scorecard API does not support tags; commit SHA required for tag %s", tag)
-	}
-
-	// Decode URL encoding
-	if decoded, err := url.QueryUnescape(repoName); err == nil {
-		repoName = decoded
-	}
-
-	// Ensure repoName has the prefix
-	if !strings.HasPrefix(repoName, "github.com/") {
-		repoName = "github.com/" + repoName
 	}
 
 	url, err := url.JoinPath("https://api.securityscorecards.dev", "projects", repoName)
