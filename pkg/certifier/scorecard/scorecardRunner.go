@@ -18,26 +18,38 @@ package scorecard
 import (
 	"context"
 	"fmt"
-	"io"
-	"net/http"
-	"net/url"
-	"os"
-	"time"
-
 	"github.com/guacsec/guac/pkg/logging"
 	"github.com/ossf/scorecard/v4/checker"
 	"github.com/ossf/scorecard/v4/checks"
 	"github.com/ossf/scorecard/v4/log"
 	sc "github.com/ossf/scorecard/v4/pkg"
+	"io"
+	"net/http"
+	"net/url"
+	"os"
+	"strings"
+	"time"
 )
+
+const githubPrefix = "github.com/"
 
 // scorecardRunner is a struct that implements the Scorecard interface.
 type scorecardRunner struct {
 	ctx context.Context
 }
 
+// normalizeRepoName ensures the repo name has the github.com/ prefix required by the Scorecard API.
+// If the prefix is missing, it is added. If the repo name already has the prefix, it is returned as-is.
+func normalizeRepoName(repoName string) string {
+	if strings.HasPrefix(repoName, githubPrefix) {
+		return repoName
+	}
+	return githubPrefix + repoName
+}
+
 func (s scorecardRunner) GetScore(repoName, commitSHA, tag string) (*sc.ScorecardResult, error) {
 	logger := logging.FromContext(s.ctx)
+	repoName = normalizeRepoName(repoName)
 
 	// First try API approach
 	logger.Debugf("Attempting to fetch scorecard from API for repo: %s, commit: %s", repoName, commitSHA)
