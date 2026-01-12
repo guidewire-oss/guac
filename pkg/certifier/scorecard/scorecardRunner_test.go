@@ -66,8 +66,8 @@ func Test_scorecardRunner_GetScore(t *testing.T) {
 	}
 }
 
-// Test_scorecardRunner_getScoreFromAPI tests the early return logic
-// for tags without commit SHAs, which doesn't require network access.
+// Test_scorecardRunner_getScoreFromAPI tests the API fetch logic with retry behavior.
+// Tests that require network access use a well-known repo (ossf/scorecard).
 
 func Test_scorecardRunner_getScoreFromAPI(t *testing.T) {
 	tests := []struct {
@@ -79,20 +79,42 @@ func Test_scorecardRunner_getScoreFromAPI(t *testing.T) {
 		errContains string
 	}{
 		{
-			name:        "tag without commit SHA returns error",
-			repoName:    "test/repo",
-			commitSHA:   "",
-			tag:         "v1.0.0",
-			wantErr:     true,
-			errContains: "scorecard API does not support tags",
+			name:      "valid repo without commit returns latest scorecard",
+			repoName:  "github.com/ossf/scorecard",
+			commitSHA: "",
+			tag:       "",
+			wantErr:   false,
 		},
 		{
-			name:        "tag with HEAD commit SHA returns error",
-			repoName:    "test/repo",
-			commitSHA:   "HEAD",
-			tag:         "v1.0.0",
+			name:        "tag without commit SHA skips API for local computation",
+			repoName:    "github.com/ossf/scorecard",
+			commitSHA:   "",
+			tag:         "v4.10.4",
 			wantErr:     true,
-			errContains: "scorecard API does not support tags",
+			errContains: "tag provided without commit SHA",
+		},
+		{
+			name:        "tag with HEAD skips API for local computation",
+			repoName:    "github.com/ossf/scorecard",
+			commitSHA:   "HEAD",
+			tag:         "v4.10.4",
+			wantErr:     true,
+			errContains: "tag provided without commit SHA",
+		},
+		{
+			name:        "non-existent repo returns error",
+			repoName:    "github.com/nonexistent/nonexistent-repo-12345",
+			commitSHA:   "",
+			tag:         "",
+			wantErr:     true,
+			errContains: "scorecard not found in API",
+		},
+		{
+			name:      "invalid commit SHA falls back to latest scorecard",
+			repoName:  "github.com/ossf/scorecard",
+			commitSHA: "0000000000000000000000000000000000000000",
+			tag:       "",
+			wantErr:   false,
 		},
 	}
 
@@ -101,8 +123,6 @@ func Test_scorecardRunner_getScoreFromAPI(t *testing.T) {
 			ctx := context.Background()
 			runner := scorecardRunner{ctx: ctx}
 
-			// Run the actual API call - these tests only cover edge cases
-			// that return early without making network requests
 			got, err := runner.getScoreFromAPI(tt.repoName, tt.commitSHA, tt.tag)
 
 			if (err != nil) != tt.wantErr {
