@@ -18,26 +18,38 @@ package scorecard
 import (
 	"context"
 	"fmt"
-	"io"
-	"net/http"
-	"net/url"
-	"os"
-	"time"
-
 	"github.com/guacsec/guac/pkg/logging"
 	"github.com/ossf/scorecard/v4/checker"
 	"github.com/ossf/scorecard/v4/checks"
 	"github.com/ossf/scorecard/v4/log"
 	sc "github.com/ossf/scorecard/v4/pkg"
+	"io"
+	"net/http"
+	"net/url"
+	"os"
+	"strings"
+	"time"
 )
+
+const githubPrefix = "github.com/"
 
 // scorecardRunner is a struct that implements the Scorecard interface.
 type scorecardRunner struct {
 	ctx context.Context
 }
 
+// normalizeRepoName ensures the repo name has the github.com/ prefix required by the Scorecard API.
+// If the prefix is missing, it is added. If the repo name already has the prefix, it is returned as-is.
+func normalizeRepoName(repoName string) string {
+	if strings.HasPrefix(repoName, githubPrefix) {
+		return repoName
+	}
+	return githubPrefix + repoName
+}
+
 func (s scorecardRunner) GetScore(repoName, commitSHA, tag string) (*sc.ScorecardResult, error) {
 	logger := logging.FromContext(s.ctx)
+	repoName = normalizeRepoName(repoName)
 
 	// First try API approach
 	logger.Debugf("Attempting to fetch scorecard from API for repo: %s, commit: %s", repoName, commitSHA)
@@ -67,30 +79,44 @@ func (s scorecardRunner) GetScore(repoName, commitSHA, tag string) (*sc.Scorecar
 func (s scorecardRunner) getScoreFromAPI(repoName, commitSHA, tag string) (*sc.ScorecardResult, error) {
 	logger := logging.FromContext(s.ctx)
 
-	// The Scorecard API only supports commit SHAs, not tags.
-	// If a tag is provided without a commitSHA, we cannot use the API
-	// and must fall back to local computation to avoid returning incorrect results.
+	// If tag is provided without a valid commitSHA, skip API and use local computation
+	// The API cannot resolve tags, but computeScore can look up the commit for a tag
 	if (commitSHA == "" || commitSHA == "HEAD") && tag != "" {
-		logger.Debugf("Cannot use API for tag %s without commit SHA - will fall back to local computation", tag)
-		return nil, fmt.Errorf("scorecard API does not support tags; commit SHA required for tag %s", tag)
+		logger.Debugf("Tag %s provided without commit SHA - skipping API, will use local computation", tag)
+		return nil, fmt.Errorf("tag provided without commit SHA; falling back to local computation for tag %s", tag)
 	}
 
-	url, err := url.JoinPath("https://api.securityscorecards.dev", "projects", repoName)
+	baseURL, err := url.JoinPath("https://api.securityscorecards.dev", "projects", repoName)
 	if err != nil {
 		return nil, err
 	}
 
+	// If commitSHA is provided, try with it first
 	if commitSHA != "" && commitSHA != "HEAD" {
-		url += "?commit=" + commitSHA
+		urlWithCommit := baseURL + "?commit=" + commitSHA
+		result, err := s.fetchFromAPI(urlWithCommit)
+		if err == nil {
+			return result, nil
+		}
+		logger.Debugf("API call with commit %s failed, retrying without commit: %v", commitSHA, err)
 	}
 
-	logger.Debugf("Making API request to: %s", url)
+	result, err := s.fetchFromAPI(baseURL)
+	if err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
+func (s scorecardRunner) fetchFromAPI(apiURL string) (*sc.ScorecardResult, error) {
+	logger := logging.FromContext(s.ctx)
+	logger.Debugf("Making API request to: %s", apiURL)
 
 	httpClient := &http.Client{
 		Timeout: 30 * time.Second,
 	}
 
-	req, err := http.NewRequestWithContext(s.ctx, http.MethodGet, url, nil)
+	req, err := http.NewRequestWithContext(s.ctx, http.MethodGet, apiURL, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -111,7 +137,7 @@ func (s scorecardRunner) getScoreFromAPI(repoName, commitSHA, tag string) (*sc.S
 	logger.Debugf("API response status code: %d", resp.StatusCode)
 
 	if resp.StatusCode == http.StatusNotFound {
-		return nil, fmt.Errorf("Scorecard for repo %s not found in scorecard API", repoName)
+		return nil, fmt.Errorf("scorecard not found in API")
 	}
 
 	if resp.StatusCode >= 400 {
