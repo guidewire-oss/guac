@@ -238,7 +238,7 @@ jobs:
           sed -i s/local-organic-guac/ghcr.io\\/${{ github.repository_owner }}\\/guac:${{ github.ref_name }}/ guac-compose/.env
           tar -zcvf guac-compose.tar.gz guac-compose/
           rm -rf guac-compose/
-          gh release upload ${{ github.ref_name }} guac-compose.tar.gz
+          gh release upload ${{ github.ref_name }} guac-compose.tar.gz --clobber
           rm guac-compose.tar.gz
         shell: bash
       - name: Modify and publish demo compose yaml
@@ -249,7 +249,7 @@ jobs:
           set -euo pipefail
           cp container_files/guac-demo-compose.yaml .
           sed -i s/\$GUAC_IMAGE/ghcr.io\\/${{ github.repository_owner }}\\/guac:${{ github.ref_name }}/ guac-demo-compose.yaml
-          gh release upload ${{ github.ref_name }} guac-demo-compose.yaml
+          gh release upload ${{ github.ref_name }} guac-demo-compose.yaml --clobber
           rm guac-demo-compose.yaml
         shell: bash
       - name: Modify and publish postgres compose yaml
@@ -260,6 +260,6 @@ jobs:
           set -euo pipefail
           cp container_files/guac-postgres-compose.yaml .
           sed -i s/\$GUAC_IMAGE/ghcr.io\\/${{ github.repository_owner }}\\/guac:${{ github.ref_name }}/ guac-postgres-compose.yaml
-          gh release upload ${{ github.ref_name }} guac-postgres-compose.yaml
+          gh release upload ${{ github.ref_name }} guac-postgres-compose.yaml --clobber
           rm guac-postgres-compose.yaml
         shell: bash
