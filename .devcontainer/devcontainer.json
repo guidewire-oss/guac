@@ -36,7 +36,7 @@
   },
 
   "containerEnv": {
-    "GUAC_IMAGE": "ghcr.io/guacsec/guac:v1.1.0",
+    "GUAC_IMAGE": "ghcr.io/guidewire-oss/guac:v1.1.0-gwfork.1",
     "GUAC_API_PORT": "8080"
   },
 
